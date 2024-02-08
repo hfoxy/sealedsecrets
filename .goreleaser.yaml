@@ -38,7 +38,7 @@ universal_binaries:
 brews:
   - name: sealedsecrets
     homepage: "https://github.com/hfoxy/sealedsecrets"
-    tap:
+    repository:
       owner: hfoxy
       name: homebrew-hfoxy
     commit_author:
