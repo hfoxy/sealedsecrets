@@ -12,6 +12,10 @@ on:
 
 jobs:
   build:
+    strategy:
+      matrix:
+        os: [linux, windows, darwin]
+        arch: [amd64, arm64]
     name: Build
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
@@ -33,50 +37,15 @@ jobs:
       - name: Make bin directory
         run: mkdir -p bin
 
-      - name: Build (linux/amd64)
+      - name: Build (${{ matrix.os }}/${{ matrix.arch }})
         env:
-          GOOS: linux
-          GOARCH: amd64
-        run: go build -o ./bin/sealedsecrets-linux-amd64 .
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+        run: go build -o ./bin/sealedsecrets-${{ matrix.os }}-${{ matrix.arch }} .
 
-      - name: Build (linux/arm64)
-        env:
-          GOOS: linux
-          GOARCH: arm64
-        run: go build -o ./bin/sealedsecrets-linux-arm64 .
-
-      - name: Build (darwin/amd64)
-        env:
-          GOOS: darwin
-          GOARCH: amd64
-        run: go build -o ./bin/sealedsecrets-darwin-amd64 .
-
-      - name: Build (darwin/arm64)
-        env:
-          GOOS: darwin
-          GOARCH: arm64
-        run: go build -o ./bin/sealedsecrets-darwin-arm64 .
-
-      - name: Build (windows/amd64)
-        env:
-          GOOS: windows
-          GOARCH: amd64
-        run: go build -o ./bin/sealedsecrets-windows-amd64 .
-
-      - name: Build (windows/arm64)
-        env:
-          GOOS: windows
-          GOARCH: arm64
-        run: go build -o ./bin/sealedsecrets-windows-arm64 .
-
-      - name: Add release files
+      - name: Add release file
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            bin/sealedsecrets-linux-amd64
-            bin/sealedsecrets-linux-arm64
-            bin/sealedsecrets-darwin-amd64
-            bin/sealedsecrets-darwin-arm64
-            bin/sealedsecrets-windows-amd64
-            bin/sealedsecrets-windows-arm64
+            bin/sealedsecrets-${{ matrix.os }}-${{ matrix.arch }}
