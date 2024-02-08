@@ -1,1 +1,4 @@
 .idea
+sealedsecrets
+secrets-*.yaml
+test.yaml
