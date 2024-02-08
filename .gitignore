@@ -2,3 +2,4 @@
 sealedsecrets
 secrets-*.yaml
 test.yaml
+dist/
