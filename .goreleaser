@@ -1,0 +1,32 @@
+builds:
+  - binary: sealedsecrets
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -mod=vendor
+
+release:
+  prerelease: auto
+
+universal_binaries:
+  - replace: true
+
+brews:
+  - name: sealedsecrets
+    homepage: "https://github.com/hfoxy/sealedsecrets"
+    tap:
+      owner: hfoxy
+      name: homebrew-hfoxy
+    commit_author:
+      name: hfoxy
+      email: 1254033+hfoxy@users.noreply.github.com
+
+checksum:
+  name_template: 'checksums.txt'
