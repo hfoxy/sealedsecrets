@@ -1,8 +1,8 @@
-module sealedsecrets
+module github.com/hfoxy/sealedsecrets
 
-go 1.21
+go 1.25
 
-toolchain go1.21.5
+toolchain go1.25.5
 
 require (
 	github.com/bitnami-labs/sealed-secrets v0.25.0
