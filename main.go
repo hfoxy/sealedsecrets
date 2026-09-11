@@ -31,12 +31,18 @@ func main() {
 		RootFlags: func(cmd *cobra.Command) error {
 			cmd.PersistentFlags().BoolVarP(&flags.DebugEnabled, "debug", "d", flags.DebugEnabled, "Enable debug logging")
 
-			cmd.PersistentFlags().StringVar(&KubeConfig, "kubeconfig", filepath.Join(getHome(), ".kube", "config"), "Kubernetes context, defaults to current context")
+			kubeconfig := os.Getenv("KUBECONFIG")
+			if kubeconfig == "" {
+				kubeconfig = filepath.Join(getHome(), ".kube", "config")
+			}
+			cmd.PersistentFlags().StringVar(&KubeConfig, "kubeconfig", kubeconfig, "Kubeconfig file or path list, defaults to KUBECONFIG or ~/.kube/config")
 			cmd.PersistentFlags().StringVarP(&Context, "context", "c", Context, "Kubernetes context, defaults to current context")
 			// TODO: add autocompletion that fetches the current kube contexts
 
 			cmd.PersistentFlags().BoolVarP(&Force, "force", "F", Force, "force overwrite of existing files")
 			cmd.PersistentFlags().StringVarP(&Namespace, "namespace", "n", Namespace, "namespace, will attempt to find in file if not specified")
+			cmd.PersistentFlags().StringVar(&ControllerName, "controller-name", ControllerName, "name of the sealed secrets controller")
+			cmd.PersistentFlags().StringVar(&ControllerNamespace, "controller-namespace", ControllerNamespace, "namespace where the sealed secrets controller lives")
 			return nil
 		},
 		Commands: []cmd.CommandAdder{
@@ -63,7 +69,7 @@ func unsealCommand(rootCmd *cobra.Command) (*cobra.Command, error) {
 		RunE: Unseal,
 	}
 
-	c.PersistentFlags().BoolVarP(&Decode, "decode", "D", Decode, "force overwrite of existing files")
+	c.PersistentFlags().BoolVarP(&Decode, "decode", "D", Decode, "decode UTF-8 values into stringData, preserving binary values in data")
 	c.PersistentFlags().StringVarP(&OutputFile, "output", "o", OutputFile, "output file, defaults to modified input file if input ends with .yaml or no extension is provided")
 	return c, nil
 }
@@ -83,9 +89,7 @@ func sealCommand(rootCmd *cobra.Command) (*cobra.Command, error) {
 	c.PersistentFlags().BoolVarP(&Reseal, "reseal", "r", Reseal, "reseal the whole secret, not just the updated parts")
 	c.PersistentFlags().BoolVarP(&KeepTemplate, "keep-template", "t", KeepTemplate, "keep the template")
 	c.PersistentFlags().StringVarP(&OutputFile, "output", "o", OutputFile, "output file, defaults to modified input file if input ends with .unsealed.yaml or no extension is provided")
-	c.PersistentFlags().VarP(&Scope, "scope", "s", "sealing scope (namespace, cluster, strict)")
-	c.PersistentFlags().StringVar(&ControllerName, "controller-name", ControllerName, "name of the sealed secrets controller")
-	c.PersistentFlags().StringVar(&ControllerNamespace, "controller-namespace", ControllerNamespace, "namespace where the sealed secrets controller lives")
+	c.PersistentFlags().VarP(&Scope, "scope", "s", "sealing scope (strict, namespace-wide, cluster-wide)")
 
 	return c, nil
 }
