@@ -26,15 +26,12 @@ func Seal(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		return cmd.Help()
 	}
-	if len(args) > 1 && OutputFile != "" {
-		return fmt.Errorf("cannot specify output file with multiple input files")
+	pairs, err := resolveSecretFiles(args, OutputFile, true)
+	if err != nil {
+		return err
 	}
-	for _, arg := range args {
-		outputName := OutputFile
-		if outputName == "" {
-			outputName = strings.TrimSuffix(arg, ".unsealed.yaml") + ".yaml"
-		}
-		if err := seal(cmd, arg, outputName); err != nil {
+	for _, pair := range pairs {
+		if err := seal(cmd, pair.source, pair.destination); err != nil {
 			return err
 		}
 	}

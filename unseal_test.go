@@ -182,7 +182,7 @@ func TestUnsealReportsInputErrors(t *testing.T) {
 	}{
 		{"missing file", "", "unable to read file"},
 		{"invalid yaml", "[", "unable to unmarshal"},
-		{"wrong kind", "apiVersion: v1\nkind: Secret\nmetadata:\n  namespace: test\n", "must contain"},
+		{"wrong kind", "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  namespace: test\n", "must contain"},
 		{"multiple documents", "apiVersion: bitnami.com/v1alpha1\nkind: SealedSecret\nmetadata:\n  namespace: test\n---\napiVersion: v1\nkind: Secret\n", "unable to unmarshal"},
 		{"missing namespace", "apiVersion: bitnami.com/v1alpha1\nkind: SealedSecret\nmetadata:\n  name: test\n", "unable to determine namespace"},
 	} {

@@ -61,6 +61,7 @@ func unsealCommand(rootCmd *cobra.Command) (*cobra.Command, error) {
 	c := &cobra.Command{
 		Use:        "unseal",
 		Short:      "unseal a sealed secret",
+		Long:       "Unseal a SealedSecret into its .unsealed.yaml (or .yml) sibling. You can also name the unsealed destination to select its sealed sibling as the source. Existing outputs require --force.",
 		Args:       cobra.MinimumNArgs(1),
 		ArgAliases: []string{"secret_path"},
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -70,14 +71,15 @@ func unsealCommand(rootCmd *cobra.Command) (*cobra.Command, error) {
 	}
 
 	c.PersistentFlags().BoolVarP(&Decode, "decode", "D", Decode, "decode UTF-8 values into stringData, preserving binary values in data")
-	c.PersistentFlags().StringVarP(&OutputFile, "output", "o", OutputFile, "output file, defaults to modified input file if input ends with .yaml or no extension is provided")
+	c.PersistentFlags().StringVarP(&OutputFile, "output", "o", OutputFile, "output file, overrides the inferred unsealed destination")
 	return c, nil
 }
 
 func sealCommand(rootCmd *cobra.Command) (*cobra.Command, error) {
 	c := &cobra.Command{
 		Use:        "seal",
-		Short:      "seal a sealed secret",
+		Short:      "seal a secret",
+		Long:       "Seal a Secret into its sealed sibling. If the path contains a SealedSecret, use its .unsealed.yaml (or .yml) sibling as the source and update the named path. An unmarked Secret such as secrets.yaml is written to secrets.sealed.yaml. Existing outputs require --force.",
 		Args:       cobra.MinimumNArgs(1),
 		ArgAliases: []string{"secret_path"},
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -88,7 +90,7 @@ func sealCommand(rootCmd *cobra.Command) (*cobra.Command, error) {
 
 	c.PersistentFlags().BoolVarP(&Reseal, "reseal", "r", Reseal, "reseal the whole secret, not just the updated parts")
 	c.PersistentFlags().BoolVarP(&KeepTemplate, "keep-template", "t", KeepTemplate, "keep the template")
-	c.PersistentFlags().StringVarP(&OutputFile, "output", "o", OutputFile, "output file, defaults to modified input file if input ends with .unsealed.yaml or no extension is provided")
+	c.PersistentFlags().StringVarP(&OutputFile, "output", "o", OutputFile, "output file, overrides the inferred sealed destination")
 	c.PersistentFlags().VarP(&Scope, "scope", "s", "sealing scope (strict, namespace-wide, cluster-wide)")
 
 	return c, nil
