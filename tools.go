@@ -75,6 +75,7 @@ func getPublicKey(ctx context.Context) (*rsa.PublicKey, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to open cert: %v", err)
 	}
+	defer r.Close()
 
 	key, err := kubeseal.ParseKey(r)
 	if err != nil {
