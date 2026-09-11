@@ -1,5 +1,5 @@
 .idea
-sealedsecrets
+/sealedsecrets
 secrets-*.yaml
 test.yaml
 dist/
