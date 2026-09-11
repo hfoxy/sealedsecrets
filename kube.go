@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"maps"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -67,6 +69,29 @@ func newKubeClient() (*ClientConfig, error) {
 	config, err := loadingRules.Load()
 	if err != nil {
 		return nil, fmt.Errorf("unable to load kubeconfig file: %w", err)
+	}
+	if len(paths) > 1 {
+		// Keep the application's existing later-file precedence for named
+		// entries. client-go's scalar merge still picks the first current context.
+		for _, path := range paths {
+			if path == "" {
+				continue
+			}
+			fileConfig, err := clientcmd.LoadFromFile(path)
+			if os.IsNotExist(err) {
+				continue // Like client-go, ignore missing files in a config list.
+			}
+			if err != nil {
+				return nil, fmt.Errorf("unable to load kubeconfig file %s: %w", path, err)
+			}
+			maps.Copy(config.Clusters, fileConfig.Clusters)
+			maps.Copy(config.AuthInfos, fileConfig.AuthInfos)
+			maps.Copy(config.Contexts, fileConfig.Contexts)
+			maps.Copy(config.Extensions, fileConfig.Extensions)
+		}
+		if err := clientcmd.ResolveLocalPaths(config); err != nil {
+			return nil, fmt.Errorf("unable to resolve kubeconfig paths: %w", err)
+		}
 	}
 
 	if Context != "" {

@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bitnami-labs/sealed-secrets/pkg/apis/sealedsecrets/v1alpha1"
+	"github.com/bitnami/sealed-secrets/pkg/apis/sealedsecrets/v1alpha1"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,6 +28,7 @@ import (
 
 func TestMarshalSealedSecretTemplate(t *testing.T) {
 	immutable := true
+	templateText := "header\n  creationTimestamp: null\nfooter\n"
 	secret := &v1alpha1.SealedSecret{
 		TypeMeta:   metav1.TypeMeta{APIVersion: "bitnami.com/v1alpha1", Kind: "SealedSecret"},
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "test"},
@@ -37,7 +38,7 @@ func TestMarshalSealedSecretTemplate(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "test", Labels: map[string]string{"app": "example"}},
 				Type:       corev1.SecretTypeOpaque,
 				Immutable:  &immutable,
-				Data:       map[string]string{"config": "header\n  creationTimestamp: null\nfooter\n"},
+				Data:       map[string]*string{"config": &templateText, "password": nil},
 			},
 		},
 	}
@@ -268,14 +269,15 @@ func TestSealReportsFailures(t *testing.T) {
 	}
 }
 
-func TestIncrementalSealDoesNotReuseTemplatedCiphertext(t *testing.T) {
+func TestIncrementalSealPreservesRenderedTemplateOutput(t *testing.T) {
 	key := testSealKey(t)
 	raw := &corev1.Secret{TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"}, ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "test"}, Data: map[string][]byte{"key": []byte("raw")}}
 	previous, err := v1alpha1.NewSealedSecret(scheme.Codecs, &key.PublicKey, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	previous.Spec.Template.Data = map[string]string{"key": "rendered-{{ .key }}"}
+	templateText := "rendered-{{ .key }}"
+	previous.Spec.Template.Data = map[string]*string{"rendered": &templateText}
 	original, err := previous.Unseal(scheme.Codecs, map[string]*rsa.PrivateKey{"test": key})
 	if err != nil {
 		t.Fatal(err)
@@ -286,15 +288,54 @@ func TestIncrementalSealDoesNotReuseTemplatedCiphertext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(skipped) != 0 {
-		t.Fatal("reused ciphertext for a template-generated value")
+	if !reflect.DeepEqual(skipped, []string{"key"}) {
+		t.Fatalf("skipped = %v, want only original encrypted key", skipped)
 	}
 	unsealed, err := sealed.Unseal(scheme.Codecs, map[string]*rsa.PrivateKey{"test": key})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(unsealed.Data["key"]) != "rendered-raw" {
-		t.Fatalf("template result changed: %q", unsealed.Data["key"])
+	if string(unsealed.Data["key"]) != "raw" || string(unsealed.Data["rendered"]) != "rendered-raw" {
+		t.Fatalf("template result changed: %#v", unsealed.Data)
+	}
+}
+
+func TestSealedSecretNullableTemplateData(t *testing.T) {
+	key := testSealKey(t)
+	source := &corev1.Secret{
+		TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"},
+		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "test"},
+		Data:       map[string][]byte{"hidden": []byte("private"), "collision": []byte("encrypted-value")},
+	}
+	sealed, _, err := buildSealedSecret(source, nil, nil, &key.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	derived, collision := "derived-{{ .hidden }}", "template-value"
+	sealed.Spec.Template.Data = map[string]*string{"hidden": nil, "derived": &derived, "collision": &collision}
+	data, err := marshalSealedSecret(sealed, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored v1alpha1.SealedSecret
+	if err := yaml.UnmarshalStrict(data, &restored); err != nil {
+		t.Fatal(err)
+	}
+	if value, exists := restored.Spec.Template.Data["hidden"]; !exists || value != nil {
+		t.Fatal("null template key did not survive formatting")
+	}
+	unsealed, err := restored.Unseal(scheme.Codecs, map[string]*rsa.PrivateKey{"test": key})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := unsealed.Data["hidden"]; exists {
+		t.Fatal("null template key did not omit encrypted value from output")
+	}
+	if string(unsealed.Data["derived"]) != "derived-private" {
+		t.Fatal("template could not reference the omitted encrypted value")
+	}
+	if string(unsealed.Data["collision"]) != "encrypted-value" {
+		t.Fatal("template incorrectly replaced an encrypted value")
 	}
 }
 

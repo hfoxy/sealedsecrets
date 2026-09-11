@@ -10,11 +10,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bitnami-labs/sealed-secrets/pkg/apis/sealedsecrets/v1alpha1"
-	"github.com/bitnami-labs/sealed-secrets/pkg/kubeseal"
+	"github.com/bitnami/sealed-secrets/pkg/apis/sealedsecrets/v1alpha1"
+	"github.com/bitnami/sealed-secrets/pkg/kubeseal"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/yaml"
 )
 
@@ -159,8 +161,12 @@ func buildSealedSecret(source, original *corev1.Secret, previous *v1alpha1.Seale
 		return nil, nil, err
 	}
 	w := &bytes.Buffer{}
-	// Namespace is already resolved, so kubeseal does not need a cluster client.
-	if err := kubeseal.Seal(nil, "yaml", bytes.NewReader(sourceData), w, scheme.Codecs, key, v1alpha1.DefaultScope, true, source.Name, source.Namespace); err != nil {
+	// kubeseal validates the namespace through its client config, but the
+	// explicit override resolves it locally without loading cluster credentials.
+	namespaceConfig := clientcmd.NewDefaultClientConfig(clientcmdapi.Config{}, &clientcmd.ConfigOverrides{
+		Context: clientcmdapi.Context{Namespace: source.Namespace},
+	})
+	if err := kubeseal.Seal(namespaceConfig, "yaml", bytes.NewReader(sourceData), w, scheme.Codecs, key, v1alpha1.DefaultScope, true, source.Name, source.Namespace); err != nil {
 		return nil, nil, err
 	}
 	sealedSecret := &v1alpha1.SealedSecret{}

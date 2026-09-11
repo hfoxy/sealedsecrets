@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	sealedcrypto "github.com/bitnami-labs/sealed-secrets/pkg/crypto"
+	sealedcrypto "github.com/bitnami/sealed-secrets/pkg/crypto"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
