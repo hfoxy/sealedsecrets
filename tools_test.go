@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
 
@@ -40,11 +41,17 @@ func TestGetPublicKeyClosesCertificateOnParseError(t *testing.T) {
 			StatusCode: http.StatusOK,
 			Header:     http.Header{"Content-Type": []string{"application/json"}},
 			Body: io.NopCloser(strings.NewReader(`{"apiVersion":"v1","kind":"Service",` +
+				`"metadata":{"namespace":"kube-system","name":"sealed-secrets-controller"},` +
 				`"spec":{"ports":[{"name":"http","port":8080}]}}`)),
 		}, nil
 	})
 	oldClient, oldErr := clientConfig, clientConfigErr
-	clientConfig = &ClientConfig{client: &rest.Config{Host: "https://example.invalid", Transport: transport}}
+	config := &rest.Config{Host: "https://example.invalid", Transport: transport}
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientConfig = &ClientConfig{client: config, clientset: clientset}
 	clientConfigErr = nil
 	t.Cleanup(func() { clientConfig, clientConfigErr = oldClient, oldErr })
 	if _, err := getPublicKey(context.Background()); err == nil {

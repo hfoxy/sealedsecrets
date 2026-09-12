@@ -4,19 +4,20 @@ import (
 	"context"
 	"crypto/rsa"
 	"fmt"
-	"github.com/bitnami/sealed-secrets/pkg/kubeseal"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"log"
 	"os"
-	"sigs.k8s.io/yaml"
 	"strings"
+
+	"github.com/bitnami/sealed-secrets/pkg/kubeseal"
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/yaml"
 )
 
 var ErrorLogger = log.New(os.Stderr, "ERROR: ", 0)
 
-var ControllerNamespace = metav1.NamespaceSystem
-var ControllerName = "sealed-secrets-controller"
+// Empty values enable discovery; explicit settings always take precedence.
+var ControllerNamespace string
+var ControllerName string
 
 func getHome() string {
 	dirname, err := os.UserHomeDir()
@@ -34,16 +35,9 @@ func getPrivateKey(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("unable to get kubernetes client: %v", err)
 	}
 
-	secrets, err := client.clientset.CoreV1().Secrets(ControllerNamespace).List(ctx, metav1.ListOptions{
-		LabelSelector: "sealedsecrets.bitnami.com/sealed-secrets-key=active",
-	})
-
+	secrets, err := activeSealingKeys(ctx, client)
 	if err != nil {
-		return "", fmt.Errorf("unable to list secrets: %v", err)
-	}
-
-	if len(secrets.Items) == 0 {
-		return "", fmt.Errorf("no active key found")
+		return "", err
 	}
 
 	output := strings.Builder{}
@@ -71,7 +65,11 @@ func getPublicKey(ctx context.Context) (*rsa.PublicKey, error) {
 		return nil, fmt.Errorf("unable to get kubernetes client: %v", err)
 	}
 
-	r, err := kubeseal.OpenCert(ctx, client, ControllerNamespace, ControllerName, "")
+	service, err := findControllerService(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	r, err := openControllerCertificate(ctx, client, service)
 	if err != nil {
 		return nil, fmt.Errorf("unable to open cert: %v", err)
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/yaml"
@@ -205,13 +206,18 @@ func TestSealKeepTemplateWithNamespaceFlagAndStrictScope(t *testing.T) {
 	}
 	certificate := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 	transport := certificateTestTransport(func(req *http.Request) (*http.Response, error) {
-		body := []byte(`{"apiVersion":"v1","kind":"Service","spec":{"ports":[{"name":"http","port":8080}]}}`)
+		body := []byte(`{"apiVersion":"v1","kind":"Service","metadata":{"name":"sealed-secrets-controller","namespace":"kube-system"},"spec":{"ports":[{"name":"http","port":8080}]}}`)
 		if strings.HasSuffix(req.URL.Path, "/v1/cert.pem") {
 			body = certificate
 		}
 		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(bytes.NewReader(body))}, nil
 	})
-	clientConfig, clientConfigErr = &ClientConfig{client: &rest.Config{Host: "https://seal-test.invalid", Transport: transport}}, nil
+	config := &rest.Config{Host: "https://seal-test.invalid", Transport: transport}
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientConfig, clientConfigErr = &ClientConfig{client: config, clientset: clientset}, nil
 	input := filepath.Join(t.TempDir(), "secret.unsealed.yaml")
 	manifest := "apiVersion: v1\nkind: Secret\nmetadata:\n  name: example\n  annotations:\n    sealedsecrets.bitnami.com/cluster-wide: 'true'\n  labels:\n    app: example\ntype: Opaque\nstringData:\n  key: value\n"
 	if err := os.WriteFile(input, []byte(manifest), 0600); err != nil {

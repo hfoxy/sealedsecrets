@@ -51,7 +51,14 @@ func installSmartPathTestClient(t *testing.T, key *rsa.PrivateKey) {
 		case strings.HasSuffix(req.URL.Path, "/v1/cert.pem"):
 			body = certificate
 		case strings.HasSuffix(req.URL.Path, "/services/"+ControllerName):
-			body = []byte(`{"apiVersion":"v1","kind":"Service","spec":{"ports":[{"name":"http","port":8080}]}}`)
+			body, err = json.Marshal(corev1.Service{
+				TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Service"},
+				ObjectMeta: metav1.ObjectMeta{Name: ControllerName, Namespace: ControllerNamespace},
+				Spec:       corev1.ServiceSpec{Ports: []corev1.ServicePort{{Name: "http", Port: 8080}}},
+			})
+			if err != nil {
+				return nil, err
+			}
 		case req.URL.Path == "/api/v1/namespaces/"+ControllerNamespace+"/secrets":
 			body = keys
 		default:

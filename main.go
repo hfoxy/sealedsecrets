@@ -41,8 +41,8 @@ func main() {
 
 			cmd.PersistentFlags().BoolVarP(&Force, "force", "F", Force, "force overwrite of existing files")
 			cmd.PersistentFlags().StringVarP(&Namespace, "namespace", "n", Namespace, "namespace, will attempt to find in file if not specified")
-			cmd.PersistentFlags().StringVar(&ControllerName, "controller-name", ControllerName, "name of the sealed secrets controller")
-			cmd.PersistentFlags().StringVar(&ControllerNamespace, "controller-namespace", ControllerNamespace, "namespace where the sealed secrets controller lives")
+			cmd.PersistentFlags().StringVar(&ControllerName, "controller-name", ControllerName, "controller service name; defaults to sealed-secrets-controller, then automatic discovery")
+			cmd.PersistentFlags().StringVar(&ControllerNamespace, "controller-namespace", ControllerNamespace, "controller namespace; defaults to kube-system, then automatic discovery")
 			return nil
 		},
 		Commands: []cmd.CommandAdder{

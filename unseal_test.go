@@ -35,13 +35,16 @@ func setupUnsealTest(t *testing.T) *cobra.Command {
 	t.Helper()
 	oldClient, oldClientErr := clientConfig, clientConfigErr
 	oldNamespace, oldOutput, oldDecode, oldForce := Namespace, OutputFile, Decode, Force
+	oldControllerNamespace, oldControllerName := ControllerNamespace, ControllerName
 	t.Cleanup(func() {
 		clientConfig, clientConfigErr = oldClient, oldClientErr
 		Namespace, OutputFile, Decode, Force = oldNamespace, oldOutput, oldDecode, oldForce
+		ControllerNamespace, ControllerName = oldControllerNamespace, oldControllerName
 	})
 	// An unexpected client lookup must fail without consulting the local kubeconfig.
 	clientConfig, clientConfigErr = nil, errors.New("unexpected kubernetes client lookup")
 	Namespace, OutputFile, Decode, Force = "", "", false, false
+	ControllerNamespace, ControllerName = defaultControllerNamespace, defaultControllerName
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
 	return cmd
