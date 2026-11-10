@@ -189,3 +189,14 @@ func TestSealUpdateHonoursExplicitScope(t *testing.T) {
 		t.Fatalf("explicit strict scope ignored: %s", got.String())
 	}
 }
+
+func TestUnsealOmitsOwnerReferences(t *testing.T) {
+	_, fixture := setupSealedUpdate(t, testUpdateSecret(nil), false, false)
+	plaintext, err := os.ReadFile(fixture.plaintext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(plaintext), "ownerReferences") {
+		t.Fatalf("unsealed file holds owner references:\n%s", plaintext)
+	}
+}

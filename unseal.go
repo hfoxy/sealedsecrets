@@ -157,6 +157,10 @@ func unseal(cmd *cobra.Command, arg string, outputName string) error {
 	if err != nil {
 		return fmt.Errorf("unable to unmarshal unsealed secret: %w", err)
 	}
+	// The library points the rendered Secret at its SealedSecret, with the
+	// empty UID of a file that was never applied. Sealing drops it again, and
+	// the API server rejects it, so it does not belong in the editable file.
+	secret.OwnerReferences = nil
 
 	if Decode {
 		if secret.StringData == nil {
