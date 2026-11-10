@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"crypto/rsa"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/bitnami/sealed-secrets/pkg/apis/sealedsecrets/v1alpha1"
@@ -127,5 +129,63 @@ func TestSealUpdatesSealedFileWithoutNamespace(t *testing.T) {
 	}
 	if sealed.Spec.EncryptedData["b"] != fixture.original.Spec.EncryptedData["b"] {
 		t.Fatal("unchanged key was encrypted again")
+	}
+}
+
+func TestSealUpdateKeepsScopeOfSealedFile(t *testing.T) {
+	for _, scope := range []v1alpha1.SealingScope{v1alpha1.NamespaceWideScope, v1alpha1.ClusterWideScope} {
+		for _, reseal := range []bool{false, true} {
+			t.Run(scope.String()+map[bool]string{false: "", true: "/reseal"}[reseal], func(t *testing.T) {
+				// The scope annotation sits on the SealedSecret alone, as in a file
+				// sealed without --keep-template.
+				annotations := v1alpha1.UpdateScopeAnnotations(nil, scope)
+				cmd, fixture := setupSealedUpdate(t, testUpdateSecret(annotations), false, true)
+				plaintext, err := os.ReadFile(fixture.plaintext)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(string(plaintext), "sealedsecrets.bitnami.com/") {
+					t.Fatalf("fixture should not render the scope annotation:\n%s", plaintext)
+				}
+				fixture.edit(t, "a", "changed")
+
+				Force, Reseal = true, reseal
+				if err := Seal(cmd, []string{fixture.sealed}); err != nil {
+					t.Fatal(err)
+				}
+				sealed, secret := fixture.result(t)
+				if got := v1alpha1.SecretScope(&sealed); got != scope {
+					t.Fatalf("scope changed from %s to %s", scope.String(), got.String())
+				}
+				if string(secret.Data["a"]) != "changed" || string(secret.Data["b"]) != "2" {
+					t.Fatalf("unexpected values: %q", secret.Data)
+				}
+				if !reseal && sealed.Spec.EncryptedData["b"] != fixture.original.Spec.EncryptedData["b"] {
+					t.Fatal("unchanged key was encrypted again")
+				}
+			})
+		}
+	}
+}
+
+func TestSealUpdateHonoursExplicitScope(t *testing.T) {
+	annotations := v1alpha1.UpdateScopeAnnotations(nil, v1alpha1.ClusterWideScope)
+	_, fixture := setupSealedUpdate(t, testUpdateSecret(annotations), false, true)
+
+	cmd, err := sealCommand(&cobra.Command{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd.SetContext(context.Background())
+	if err := cmd.ParseFlags([]string{"--scope", "strict"}); err != nil {
+		t.Fatal(err)
+	}
+	Force = true
+	if err := Seal(cmd, []string{fixture.sealed}); err != nil {
+		t.Fatal(err)
+	}
+	sealed, _ := fixture.result(t)
+	if got := v1alpha1.SecretScope(&sealed); got != v1alpha1.StrictScope {
+		t.Fatalf("explicit strict scope ignored: %s", got.String())
 	}
 }

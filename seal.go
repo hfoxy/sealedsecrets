@@ -77,6 +77,14 @@ func seal(cmd *cobra.Command, arg string, outputName string) error {
 	// An explicitly requested strict scope must clear inherited wide-scope annotations.
 	if Scope != v1alpha1.DefaultScope || cmd.Flags().Changed("scope") {
 		sourceSecret.Annotations = v1alpha1.UpdateScopeAnnotations(sourceSecret.Annotations, Scope)
+	} else if exists && !hasScopeAnnotation(sourceSecret.Annotations) {
+		// A SealedSecret without a template keeps its scope annotation on its own
+		// metadata, which unsealing does not render into the Secret. Without this,
+		// an update would quietly reseal a cluster-wide secret as strict.
+		if scope, ok := sealedFileScope(outputName); ok && scope != v1alpha1.StrictScope {
+			sourceSecret.Annotations = v1alpha1.UpdateScopeAnnotations(sourceSecret.Annotations, scope)
+			fmt.Printf("Keeping %s scope from %s\n", scope.String(), outputName)
+		}
 	}
 
 	var originalSealedSecret *v1alpha1.SealedSecret
@@ -124,6 +132,29 @@ func seal(cmd *cobra.Command, arg string, outputName string) error {
 	}
 	fmt.Printf("Sealed secret from %s to %s\n", arg, outputName)
 	return nil
+}
+
+func hasScopeAnnotation(annotations map[string]string) bool {
+	_, clusterWide := annotations[v1alpha1.SealedSecretClusterWideAnnotation]
+	_, namespaceWide := annotations[v1alpha1.SealedSecretNamespaceWideAnnotation]
+	return clusterWide || namespaceWide
+}
+
+// sealedFileScope reads the scope the controller decrypts an existing sealed
+// file with. It needs no key, so --reseal keeps the scope too.
+func sealedFileScope(name string) (v1alpha1.SealingScope, bool) {
+	data, err := os.ReadFile(name)
+	if err != nil {
+		return v1alpha1.DefaultScope, false
+	}
+	existing := &v1alpha1.SealedSecret{}
+	if err := decodeManifest(data, existing); err != nil {
+		return v1alpha1.DefaultScope, false
+	}
+	if existing.APIVersion != "bitnami.com/v1alpha1" || existing.Kind != "SealedSecret" {
+		return v1alpha1.DefaultScope, false
+	}
+	return v1alpha1.SecretScope(existing), true
 }
 
 // Keep omitted keys for incremental updates and reuse ciphertext only when its
