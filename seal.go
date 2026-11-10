@@ -83,7 +83,7 @@ func seal(cmd *cobra.Command, arg string, outputName string) error {
 	var originalSecret *corev1.Secret
 	if !Reseal && exists {
 		var originalData string
-		originalData, originalSealedSecret, err = unsealSecretForUpdate(cmd, outputName)
+		originalData, originalSealedSecret, err = unsealSecretForUpdate(cmd, outputName, ns)
 		if err != nil {
 			return err
 		}

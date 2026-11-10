@@ -250,7 +250,7 @@ func TestUnsealForUpdateUsesOriginalNamespace(t *testing.T) {
 			setUnsealTestNamespace(t, input, test.manifestNS, test.annotationNS)
 			Namespace = test.commandNS
 
-			out, original, err := unsealSecretForUpdate(cmd, input)
+			out, original, err := unsealSecretForUpdate(cmd, input, test.commandNS)
 			if err != nil {
 				t.Fatal(err)
 			}
