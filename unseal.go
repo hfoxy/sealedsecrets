@@ -39,16 +39,18 @@ func Unseal(cmd *cobra.Command, args []string) error {
 }
 
 func unsealSecret(cmd *cobra.Command, name string) (string, *v1alpha1.SealedSecret, error) {
-	return unsealSecretWithNamespace(cmd, name, false)
+	return unsealSecretWithNamespace(cmd, name, false, Namespace)
 }
 
 // Updates must decrypt using the original encryption namespace before sealing
-// for the namespace selected by the current command.
-func unsealSecretForUpdate(cmd *cobra.Command, name string) (string, *v1alpha1.SealedSecret, error) {
-	return unsealSecretWithNamespace(cmd, name, true)
+// for the namespace selected by the current command. A sealed file with neither
+// a namespace nor the namespace annotation (one kustomize places) falls back to
+// that selected namespace, which the unsealed source usually names.
+func unsealSecretForUpdate(cmd *cobra.Command, name string, namespace string) (string, *v1alpha1.SealedSecret, error) {
+	return unsealSecretWithNamespace(cmd, name, true, namespace)
 }
 
-func unsealSecretWithNamespace(cmd *cobra.Command, name string, preferManifestNamespace bool) (string, *v1alpha1.SealedSecret, error) {
+func unsealSecretWithNamespace(cmd *cobra.Command, name string, preferManifestNamespace bool, namespace string) (string, *v1alpha1.SealedSecret, error) {
 	fileName := name
 	data, err := os.ReadFile(fileName)
 	if err != nil {
@@ -64,7 +66,7 @@ func unsealSecretWithNamespace(cmd *cobra.Command, name string, preferManifestNa
 		return "", nil, fmt.Errorf("file %s must contain a bitnami.com/v1alpha1 SealedSecret", name)
 	}
 
-	ns := Namespace
+	ns := namespace
 	nsAnno, ok := sealedSecret.ObjectMeta.Annotations[NamespaceKey]
 	if preferManifestNamespace {
 		if sealedSecret.Namespace != "" {
@@ -155,6 +157,10 @@ func unseal(cmd *cobra.Command, arg string, outputName string) error {
 	if err != nil {
 		return fmt.Errorf("unable to unmarshal unsealed secret: %w", err)
 	}
+	// The library points the rendered Secret at its SealedSecret, with the
+	// empty UID of a file that was never applied. Sealing drops it again, and
+	// the API server rejects it, so it does not belong in the editable file.
+	secret.OwnerReferences = nil
 
 	if Decode {
 		if secret.StringData == nil {
