@@ -127,6 +127,9 @@ func seal(cmd *cobra.Command, arg string, outputName string) error {
 		fmt.Printf("Skipped %d unchanged keys: %s\n", len(skipped), strings.Join(skipped, ", "))
 	}
 
+	if existing != nil {
+		keepSealedSecretMetadata(sealedSecret, existing.secret)
+	}
 	if existing != nil && existing.secret.Namespace == "" {
 		// The namespace comes from where the file is deployed (a kustomize
 		// namespace or an Argo CD destination), so leave it out again.
@@ -168,6 +171,33 @@ func hasScopeAnnotation(annotations map[string]string) bool {
 	_, clusterWide := annotations[v1alpha1.SealedSecretClusterWideAnnotation]
 	_, namespaceWide := annotations[v1alpha1.SealedSecretNamespaceWideAnnotation]
 	return clusterWide || namespaceWide
+}
+
+// keepSealedSecretMetadata copies the labels and annotations an existing file
+// puts on the SealedSecret itself (an Argo CD sync wave, say) onto its
+// replacement. The library writes only the scope annotations there, and this
+// command decides those and the namespace annotation itself.
+func keepSealedSecretMetadata(sealed, existing *v1alpha1.SealedSecret) {
+	for key, value := range existing.Labels {
+		if sealed.Labels == nil {
+			sealed.Labels = make(map[string]string)
+		}
+		if _, ok := sealed.Labels[key]; !ok {
+			sealed.Labels[key] = value
+		}
+	}
+	for key, value := range existing.Annotations {
+		switch key {
+		case v1alpha1.SealedSecretClusterWideAnnotation, v1alpha1.SealedSecretNamespaceWideAnnotation, NamespaceKey:
+			continue
+		}
+		if sealed.Annotations == nil {
+			sealed.Annotations = make(map[string]string)
+		}
+		if _, ok := sealed.Annotations[key]; !ok {
+			sealed.Annotations[key] = value
+		}
+	}
 }
 
 type existingSealedFile struct {

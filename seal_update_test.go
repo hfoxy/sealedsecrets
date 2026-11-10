@@ -285,3 +285,69 @@ func TestSealUpdateLeavesSealedFileWithoutNamespace(t *testing.T) {
 		})
 	}
 }
+
+func TestSealUpdateKeepsSealedSecretMetadata(t *testing.T) {
+	for _, reseal := range []bool{false, true} {
+		t.Run(map[bool]string{false: "incremental", true: "reseal"}[reseal], func(t *testing.T) {
+			annotations := v1alpha1.UpdateScopeAnnotations(nil, v1alpha1.ClusterWideScope)
+			cmd, fixture := setupSealedUpdate(t, testUpdateSecret(annotations), false, false)
+			content, err := os.ReadFile(fixture.sealed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var manifest map[string]interface{}
+			if err := yaml.Unmarshal(content, &manifest); err != nil {
+				t.Fatal(err)
+			}
+			metadata := manifest["metadata"].(map[string]interface{})
+			metadata["labels"] = map[string]string{"app.kubernetes.io/part-of": "example"}
+			metadata["annotations"].(map[string]interface{})["argocd.argoproj.io/sync-wave"] = "-10"
+			if content, err = yaml.Marshal(manifest); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(fixture.sealed, content, 0644); err != nil {
+				t.Fatal(err)
+			}
+			fixture.edit(t, "a", "changed")
+
+			Force, Reseal = true, reseal
+			if err := Seal(cmd, []string{fixture.sealed}); err != nil {
+				t.Fatal(err)
+			}
+			sealed, rendered := fixture.result(t)
+			if sealed.Labels["app.kubernetes.io/part-of"] != "example" || sealed.Annotations["argocd.argoproj.io/sync-wave"] != "-10" {
+				t.Fatalf("SealedSecret metadata not kept: %#v", sealed.ObjectMeta)
+			}
+			if v1alpha1.SecretScope(&sealed) != v1alpha1.ClusterWideScope {
+				t.Fatal("scope not kept")
+			}
+			if string(rendered.Data["a"]) != "changed" {
+				t.Fatalf("unexpected values: %q", rendered.Data)
+			}
+		})
+	}
+}
+
+func TestSealUpdateExplicitScopeReplacesSealedScopeAnnotation(t *testing.T) {
+	annotations := v1alpha1.UpdateScopeAnnotations(nil, v1alpha1.ClusterWideScope)
+	_, fixture := setupSealedUpdate(t, testUpdateSecret(annotations), false, false)
+	cmd, err := sealCommand(&cobra.Command{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd.SetContext(context.Background())
+	if err := cmd.ParseFlags([]string{"--scope", "namespace-wide", "--reseal"}); err != nil {
+		t.Fatal(err)
+	}
+	Force = true
+	if err := Seal(cmd, []string{fixture.sealed}); err != nil {
+		t.Fatal(err)
+	}
+	sealed, _ := fixture.result(t)
+	if _, ok := sealed.Annotations[v1alpha1.SealedSecretClusterWideAnnotation]; ok {
+		t.Fatalf("old scope annotation kept beside the new one: %q", sealed.Annotations)
+	}
+	if v1alpha1.SecretScope(&sealed) != v1alpha1.NamespaceWideScope {
+		t.Fatal("explicit scope ignored")
+	}
+}
