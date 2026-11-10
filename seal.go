@@ -74,17 +74,31 @@ func seal(cmd *cobra.Command, arg string, outputName string) error {
 	}
 	nsFromFile := ns == sourceSecret.Namespace
 	sourceSecret.Namespace = ns
+
+	// An update keeps the shape of the sealed file it replaces: its scope, its
+	// template and the absence of a namespace. Flags still choose otherwise.
+	var existing *existingSealedFile
+	if exists {
+		existing = readExistingSealedFile(outputName)
+	}
 	// An explicitly requested strict scope must clear inherited wide-scope annotations.
 	if Scope != v1alpha1.DefaultScope || cmd.Flags().Changed("scope") {
 		sourceSecret.Annotations = v1alpha1.UpdateScopeAnnotations(sourceSecret.Annotations, Scope)
-	} else if exists && !hasScopeAnnotation(sourceSecret.Annotations) {
+	} else if existing != nil && !hasScopeAnnotation(sourceSecret.Annotations) {
 		// A SealedSecret without a template keeps its scope annotation on its own
 		// metadata, which unsealing does not render into the Secret. Without this,
 		// an update would quietly reseal a cluster-wide secret as strict.
-		if scope, ok := sealedFileScope(outputName); ok && scope != v1alpha1.StrictScope {
+		if scope := v1alpha1.SecretScope(existing.secret); scope != v1alpha1.StrictScope {
 			sourceSecret.Annotations = v1alpha1.UpdateScopeAnnotations(sourceSecret.Annotations, scope)
 			fmt.Printf("Keeping %s scope from %s\n", scope.String(), outputName)
 		}
+	}
+	// Without its template the controller renders an Opaque Secret with no
+	// labels or annotations, so dropping it is never what an update means.
+	keepTemplate := KeepTemplate
+	if !keepTemplate && existing != nil && existing.hasTemplate {
+		keepTemplate = true
+		fmt.Printf("Keeping the template of %s\n", outputName)
 	}
 
 	var originalSealedSecret *v1alpha1.SealedSecret
@@ -113,7 +127,23 @@ func seal(cmd *cobra.Command, arg string, outputName string) error {
 		fmt.Printf("Skipped %d unchanged keys: %s\n", len(skipped), strings.Join(skipped, ", "))
 	}
 
-	if KeepTemplate {
+	if existing != nil && existing.secret.Namespace == "" {
+		// The namespace comes from where the file is deployed (a kustomize
+		// namespace or an Argo CD destination), so leave it out again.
+		sealedSecret.Namespace = ""
+		if existing.secret.Spec.Template.Namespace == "" {
+			sealedSecret.Spec.Template.Namespace = ""
+		}
+		if _, ok := existing.secret.Annotations[NamespaceKey]; ok {
+			if sealedSecret.Annotations == nil {
+				sealedSecret.Annotations = make(map[string]string)
+			}
+			sealedSecret.Annotations[NamespaceKey] = ns
+		} else {
+			delete(sealedSecret.Annotations, NamespaceKey)
+		}
+		fmt.Printf("Leaving %s without a namespace, as it was\n", outputName)
+	} else if keepTemplate {
 		if !nsFromFile {
 			if sealedSecret.Annotations == nil {
 				sealedSecret.Annotations = make(map[string]string)
@@ -123,7 +153,7 @@ func seal(cmd *cobra.Command, arg string, outputName string) error {
 			delete(sealedSecret.Annotations, NamespaceKey)
 		}
 	}
-	data, err := marshalSealedSecret(sealedSecret, KeepTemplate)
+	data, err := marshalSealedSecret(sealedSecret, keepTemplate)
 	if err != nil {
 		return fmt.Errorf("unable to marshal sealed secret: %w", err)
 	}
@@ -140,21 +170,34 @@ func hasScopeAnnotation(annotations map[string]string) bool {
 	return clusterWide || namespaceWide
 }
 
-// sealedFileScope reads the scope the controller decrypts an existing sealed
-// file with. It needs no key, so --reseal keeps the scope too.
-func sealedFileScope(name string) (v1alpha1.SealingScope, bool) {
+type existingSealedFile struct {
+	secret      *v1alpha1.SealedSecret
+	hasTemplate bool
+}
+
+// readExistingSealedFile reads the shape of a sealed file an update replaces.
+// It needs no key, so --reseal keeps that shape too. Anything that is not a
+// SealedSecret returns nil and is overwritten as before.
+func readExistingSealedFile(name string) *existingSealedFile {
 	data, err := os.ReadFile(name)
 	if err != nil {
-		return v1alpha1.DefaultScope, false
+		return nil
 	}
-	existing := &v1alpha1.SealedSecret{}
-	if err := decodeManifest(data, existing); err != nil {
-		return v1alpha1.DefaultScope, false
+	secret := &v1alpha1.SealedSecret{}
+	if err := decodeManifest(data, secret); err != nil {
+		return nil
 	}
-	if existing.APIVersion != "bitnami.com/v1alpha1" || existing.Kind != "SealedSecret" {
-		return v1alpha1.DefaultScope, false
+	if secret.APIVersion != "bitnami.com/v1alpha1" || secret.Kind != "SealedSecret" {
+		return nil
 	}
-	return v1alpha1.SecretScope(existing), true
+	// The typed template cannot tell an absent template from an empty one.
+	var document map[string]interface{}
+	if err := decodeManifest(data, &document); err != nil {
+		return nil
+	}
+	spec, _ := document["spec"].(map[string]interface{})
+	_, hasTemplate := spec["template"]
+	return &existingSealedFile{secret: secret, hasTemplate: hasTemplate}
 }
 
 // Keep omitted keys for incremental updates and reuse ciphertext only when its

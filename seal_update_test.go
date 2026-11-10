@@ -200,3 +200,88 @@ func TestUnsealOmitsOwnerReferences(t *testing.T) {
 		t.Fatalf("unsealed file holds owner references:\n%s", plaintext)
 	}
 }
+
+func TestSealUpdateKeepsTemplateOfSealedFile(t *testing.T) {
+	for _, reseal := range []bool{false, true} {
+		t.Run(map[bool]string{false: "incremental", true: "reseal"}[reseal], func(t *testing.T) {
+			secret := testUpdateSecret(map[string]string{"replicator.v1.mittwald.de/strip-labels": "true"})
+			secret.Labels = map[string]string{"app": "example"}
+			secret.Type = corev1.SecretTypeBasicAuth
+			cmd, fixture := setupSealedUpdate(t, secret, true, false)
+			fixture.edit(t, "a", "changed")
+
+			// No --keep-template: the existing template decides.
+			Force, Reseal = true, reseal
+			if err := Seal(cmd, []string{fixture.sealed}); err != nil {
+				t.Fatal(err)
+			}
+			sealed, rendered := fixture.result(t)
+			if sealed.Spec.Template.Type != corev1.SecretTypeBasicAuth || sealed.Spec.Template.Namespace != "team" {
+				t.Fatalf("template not kept: %#v", sealed.Spec.Template)
+			}
+			if rendered.Type != corev1.SecretTypeBasicAuth || rendered.Labels["app"] != "example" || rendered.Annotations["replicator.v1.mittwald.de/strip-labels"] != "true" {
+				t.Fatalf("controller would render a different Secret: %#v", rendered.ObjectMeta)
+			}
+			if string(rendered.Data["a"]) != "changed" || string(rendered.Data["b"]) != "2" {
+				t.Fatalf("unexpected values: %q", rendered.Data)
+			}
+		})
+	}
+}
+
+func TestSealUpdateDoesNotAddTemplate(t *testing.T) {
+	cmd, fixture := setupSealedUpdate(t, testUpdateSecret(nil), false, false)
+	fixture.edit(t, "a", "changed")
+	Force = true
+	if err := Seal(cmd, []string{fixture.sealed}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(fixture.sealed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "template:") {
+		t.Fatalf("update added a template:\n%s", data)
+	}
+}
+
+func TestSealUpdateLeavesSealedFileWithoutNamespace(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		keepTemplate bool
+		annotation   bool
+	}{
+		{"no template", false, false},
+		{"template", true, false},
+		{"namespace annotation", false, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cmd, fixture := setupSealedUpdate(t, testUpdateSecret(nil), test.keepTemplate, true)
+			if test.annotation {
+				setUnsealTestNamespace(t, fixture.sealed, "", "team")
+			}
+			fixture.edit(t, "a", "changed")
+			Force = true
+			if err := Seal(cmd, []string{fixture.sealed}); err != nil {
+				t.Fatal(err)
+			}
+			sealed, rendered := fixture.result(t)
+			if sealed.Namespace != "" || sealed.Spec.Template.Namespace != "" {
+				t.Fatalf("update added a namespace: %q, template %q", sealed.Namespace, sealed.Spec.Template.Namespace)
+			}
+			annotation, ok := sealed.Annotations[NamespaceKey]
+			if ok != test.annotation || (ok && annotation != "team") {
+				t.Fatalf("namespace annotation changed: %q", sealed.Annotations)
+			}
+			if _, kept := sealed.Spec.Template.Annotations[NamespaceKey]; kept {
+				t.Fatal("namespace annotation reached the rendered Secret")
+			}
+			if string(rendered.Data["a"]) != "changed" || string(rendered.Data["b"]) != "2" {
+				t.Fatalf("unexpected values: %q", rendered.Data)
+			}
+			if sealed.Spec.EncryptedData["b"] != fixture.original.Spec.EncryptedData["b"] {
+				t.Fatal("unchanged key was encrypted again")
+			}
+		})
+	}
+}

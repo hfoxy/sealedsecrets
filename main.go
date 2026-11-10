@@ -79,7 +79,7 @@ func sealCommand(rootCmd *cobra.Command) (*cobra.Command, error) {
 	c := &cobra.Command{
 		Use:        "seal",
 		Short:      "seal a secret",
-		Long:       "Seal a Secret into its sealed sibling. If the path contains a SealedSecret, use its .unsealed.yaml (or .yml) sibling as the source and update the named path. An unmarked Secret such as secrets.yaml is written to secrets.sealed.yaml. Existing outputs require --force.",
+		Long:       "Seal a Secret into its sealed sibling. If the path contains a SealedSecret, use its .unsealed.yaml (or .yml) sibling as the source and update the named path. An unmarked Secret such as secrets.yaml is written to secrets.sealed.yaml. Existing outputs require --force.\n\nUpdating an existing SealedSecret keeps the ciphertext of unchanged keys and the keys the source leaves out (use --reseal to encrypt everything again and drop them). It also keeps the existing file's scope, its template, and the absence of a namespace; --scope and --keep-template still choose otherwise.",
 		Args:       cobra.MinimumNArgs(1),
 		ArgAliases: []string{"secret_path"},
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -88,8 +88,8 @@ func sealCommand(rootCmd *cobra.Command) (*cobra.Command, error) {
 		RunE: Seal,
 	}
 
-	c.PersistentFlags().BoolVarP(&Reseal, "reseal", "r", Reseal, "reseal the whole secret, not just the updated parts")
-	c.PersistentFlags().BoolVarP(&KeepTemplate, "keep-template", "t", KeepTemplate, "keep the template")
+	c.PersistentFlags().BoolVarP(&Reseal, "reseal", "r", Reseal, "reseal the whole secret, not just the updated parts, dropping keys the source leaves out")
+	c.PersistentFlags().BoolVarP(&KeepTemplate, "keep-template", "t", KeepTemplate, "write the template (an update keeps an existing template without this)")
 	c.PersistentFlags().StringVarP(&OutputFile, "output", "o", OutputFile, "output file, overrides the inferred sealed destination")
 	c.PersistentFlags().VarP(&Scope, "scope", "s", "sealing scope (strict, namespace-wide, cluster-wide)")
 
